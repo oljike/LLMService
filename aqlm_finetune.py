@@ -13,9 +13,7 @@ from transformers import (
     Trainer,
 
 )
-from datasets import load_dataset
-from torch.utils.data import Dataset
-
+from datasets import load_dataset, Dataset
 
 if __name__=="__main__":
 
