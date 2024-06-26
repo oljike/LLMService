@@ -62,7 +62,7 @@ if __name__=="__main__":
         new_data.append(chat)
 
     tokenizer_iqlm.pad_token = tokenizer_iqlm.eos_token
-    code_dataset = Dataset.from_dict({"chat": new_data[:100]})
+    code_dataset = Dataset.from_dict({"chat": new_data})
 
     code_dataset = code_dataset.map(
         lambda x: {"chat_format": tokenizer_iqlm.apply_chat_template(x["chat"], tokenize=False)},
@@ -129,7 +129,7 @@ if __name__=="__main__":
         output_dir="mistral_lora_clm_with_added_tokens",
         num_train_epochs=2,
         save_total_limit=5,
-        per_device_train_batch_size=2,
+        per_device_train_batch_size=4,
         warmup_steps=10,
         weight_decay=0.0001,
         dataloader_drop_last=True,
