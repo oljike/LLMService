@@ -151,3 +151,6 @@ if __name__=="__main__":
     )
     model.config.use_cache = False
     trainer.train()
+
+    trainer.push_to_hub(token="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")
+    trainer.model.push_to_hub(training_args.output_dir)
