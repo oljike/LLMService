@@ -62,37 +62,91 @@ if __name__=="__main__":
         new_data.append(chat)
 
     tokenizer_iqlm.pad_token = tokenizer_iqlm.eos_token
-    train_dataset2 = Dataset.from_dict({"chat": new_data})
+    code_dataset = Dataset.from_dict({"chat": new_data[:100]})
 
-    train_dataset2 = train_dataset2.map(
-        lambda x: {"input_ids": tokenizer_iqlm.apply_chat_template(x["chat"], tokenize=True,
-                                                                   truncation=True, padding=True, max_length=512)},
+    code_dataset = code_dataset.map(
+        lambda x: {"chat_format": tokenizer_iqlm.apply_chat_template(x["chat"], tokenize=False)},
         batched=True)
 
-    train_dataset2 = train_dataset2.remove_columns([col for col in train_dataset2.column_names if col != "input_ids"])
-    train_dataset2.set_format("torch")
+    text_column = "chat_format"
+    max_length = 512
+    tokenizer = tokenizer_iqlm
 
+
+    def preprocess_function(examples):
+        batch_size = len(examples[text_column])
+
+        # tokenize the user query
+        model_inputs = tokenizer(examples[text_column])
+        print(model_inputs.keys())
+
+        for i in range(batch_size):
+            # get input and answers
+            sample_input_ids = model_inputs["input_ids"][i]
+
+            # print(i, sample_input_ids, label_input_ids)
+            # concatenate the input with the answer
+            model_inputs["input_ids"][i] = sample_input_ids
+
+            # attention is set to 1 for all input
+            model_inputs["attention_mask"][i] = [1] * len(model_inputs["input_ids"][i])
+
+        # work on padding all seqs
+        for i in range(batch_size):
+            # get input and answers
+            sample_input_ids = model_inputs["input_ids"][i]
+
+            # padd the whole input with pad_id from the left of the seq
+            model_inputs["input_ids"][i] = sample_input_ids + [tokenizer.pad_token_id] * (
+                    max_length - len(sample_input_ids))
+
+            # apply the padding to the attention mask also
+            model_inputs["attention_mask"][i] = model_inputs[
+                                                    "attention_mask"
+                                                ][i] + [0] * (max_length - len(sample_input_ids))
+
+            model_inputs["input_ids"][i] = model_inputs["input_ids"][i][:max_length]
+            model_inputs["attention_mask"][i] = model_inputs["attention_mask"][i][:max_length]
+
+        return model_inputs
+
+
+    code_dataset_split = code_dataset.train_test_split(0.2)
+
+    processed_datasets = code_dataset_split.map(
+        preprocess_function,
+        batched=True,
+        num_proc=1,
+        remove_columns=code_dataset_split['train'].column_names,
+        load_from_cache_file=False,
+        desc="Running tokenizer on dataset",
+    )
+
+    train_dataset = processed_datasets["train"]
+
+    tokenizer_iqlm.pad_token = tokenizer_iqlm.eos_token
     training_args = TrainingArguments(
         output_dir="mistral_lora_clm_with_added_tokens",
         num_train_epochs=2,
         save_total_limit=5,
-        per_device_train_batch_size=8,
+        per_device_train_batch_size=2,
         warmup_steps=10,
         weight_decay=0.0001,
         dataloader_drop_last=True,
         fp16=True,
         logging_steps=10,
         learning_rate=1e-5,
-        gradient_checkpointing=True,
-        gradient_checkpointing_kwargs={"use_reentrant": False},
+        # gradient_checkpointing=True,
+        # gradient_checkpointing_kwargs={"use_reentrant": False},
         remove_unused_columns=False,
     )
 
     trainer = Trainer(
         model=model,
         args=training_args,
-        train_dataset=train_dataset2,
+        train_dataset=train_dataset,
         data_collator=transformers.DataCollatorForLanguageModeling(tokenizer_iqlm, mlm=False),
+        # data_collator = transformers.default_data_collator
 
     )
     model.config.use_cache = False
